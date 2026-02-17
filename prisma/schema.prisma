@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id          Int      @id @default(autoincrement())
+  name        String
+  contactPerson String? @db.VarChar(255)
+  email       String?  @db.VarChar(255)
+  phone       String?  @db.VarChar(50)
+  address     String?  @db.Text
+  addressLine1 String? @db.VarChar(255)  // First line of address for documents
+  addressLine2 String? @db.VarChar(255)  // Second line of address for documents
+  location    String?  @db.VarChar(255)
+  vatNumber   String?  @db.VarChar(50)
+  notes       String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  jobs        Job[]
+  topsheets   Topsheet[]
+}
+
+model Inventory {
+  id              Int      @id @default(autoincrement())
+  sku             String   @unique @db.VarChar(50)
+  name            String   @db.VarChar(500)
+  details         String?  @db.Text
+  unit            String   @db.VarChar(20)
+  itemType        String   @db.VarChar(20) // Supply, Service
+  
+  // Pricing fields
+  buyPrice        Float    @default(0)      // Cost price (purchase price) - for profit calculation
+  standardPrice   Float    @default(0)      // Standard selling price (Max_Unit_Rate)
+  discountedPrice  Float    @default(0)      // Discounted price for auto-fill in bills
+  
+  // VAT & Rate details from CSV
+  vatRate         Float    @default(0)
+  unitRateExVat   Float    @default(0)      // Unit_Rate_Excl_VAT
+  vatAmount       Float    @default(0)      // Vat_Amnt
+  finalRate       Float    @default(0)      // Final_Rate
+  maxUnitRate     Float    @default(0)      // Max_Unit_Rate
+  discountPercentCsv Float  @default(0)      // Discount_percent from CSV
+  discountAmountCsv Float  @default(0)      // Discount_amount from CSV
+  
+  // Stock
+  stockQuantity   Float    @default(0)
+  minStock        Float    @default(0)
+  
+  // Additional fields for future migration
+  category        String?  @db.VarChar(100)
+  brand           String?  @db.VarChar(100)
+  model           String?  @db.VarChar(100)
+  color           String?  @db.VarChar(50)
+  size            String?  @db.VarChar(50)
+  weight          Float    @default(0)
+  dimensions      String?  @db.VarChar(100)
+  supplier        String?  @db.VarChar(255)
+  origin          String?  @db.VarChar(100)
+  barcode         String?  @db.VarChar(50)
+  hsnCode         String?  @db.VarChar(20)
+  
+  // Pricing tiers for future
+  wholesalePrice  Float    @default(0)
+  retailPrice    Float    @default(0)
+  onlinePrice    Float    @default(0)
+  
+  // Status
+  isActive        Boolean  @default(true)
+  remarks         String?  @db.Text
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([sku])
+  @@index([name])
+  @@index([itemType])
+}
+
+model Job {
+  id              Int      @id @default(autoincrement())
+  refNumber       String   @unique @db.VarChar(50)
+  subject         String   @db.VarChar(255)
+  jobDetail       String?  @db.Text  // Separate job detail from subject
+  date            DateTime @db.Date
+  status          String   @db.VarChar(20) // QUOTATION, CHALLAN, BILL
+  
+  // Topsheet relation
+  topsheetId      Int?
+  topsheet        Topsheet? @relation(fields: [topsheetId], references: [id])
+  
+  // Customer relation
+  customerId      Int
+  customer        Customer @relation(fields: [customerId], references: [id])
+  
+  // Location
+  workLocation    String?  @db.Text
+  
+  // Financials
+  subtotal        Float    @default(0)
+  totalVat        Float    @default(0)
+  totalAmount     Float    @default(0)
+  discountPercent Float    @default(0)
+  discountAmount  Float    @default(0)
+  amountInWords   String?  @db.Text
+  
+  // References
+  billNumber      String?  @db.VarChar(50)
+  bblBillNumber   String?  @db.VarChar(50)
+  challanNumber   String?  @db.VarChar(50)
+  
+  // Dates - Three workflow dates for BRAC Bank
+  quotationDate   DateTime? @db.Date
+  challanDate     DateTime? @db.Date
+  billDate        DateTime? @db.Date
+  
+  // Notes
+  notes           String?  @db.Text
+  termsConditions String?  @db.Text
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Line items
+  items           JobItem[]
+  
+  @@index([refNumber])
+  @@index([customerId])
+  @@index([status])
+}
+
+model JobItem {
+  id              Int     @id @default(autoincrement())
+  jobId           Int
+  job             Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  // Line item details
+  serialNumber    Int
+  workDescription String  @db.Text
+  details         String? @db.Text  // Details from inventory
+  quantity        Float
+  unit            String  @db.VarChar(20)
+  
+  // Size measurements (for Size Noter functionality)
+  widthFeet       Float?  @default(0)
+  widthInches     Float?  @default(0)
+  heightFeet      Float?  @default(0)
+  heightInches    Float?  @default(0)
+  calculatedSqft  Float?  @default(0)
+  autoCalculateSqft Boolean @default(false)  // Toggle to auto-calculate quantity from sqft
+  
+  // Store multiple measurements as JSON (legacy - kept for migration)
+  measurementsJson String? @db.Text  // JSON array of measurements
+  
+  // Pricing (denormalized for performance)
+  inventoryId     Int?    // Reference to inventory item
+  sku             String? @db.VarChar(50)
+  skuName         String? @db.VarChar(255)
+  
+  // Prices
+  unitPrice       Float   // Selling price per unit
+  buyPrice        Float   @default(0)  // Cost price at time of creation - for profit calculation
+  discountPercent Float   @default(0)
+  discountAmount  Float   @default(0)
+  
+  // Calculations
+  subtotal        Float
+  vatRate         Float   @default(0)
+  vatAmount       Float   @default(0)
+  total           Float
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relation to measurements
+  measurements    Measurement[]
+  
+  @@index([jobId])
+}
+
+model Measurement {
+  id              Int     @id @default(autoincrement())
+  jobItemId       Int
+  jobItem         JobItem @relation(fields: [jobItemId], references: [id], onDelete: Cascade)
+  
+  // Size measurements
+  widthFeet       Float   @default(0)
+  widthInches     Float   @default(0)
+  heightFeet      Float   @default(0)
+  heightInches    Float   @default(0)
+  quantity        Int     @default(1)  // Number of pieces with this measurement
+  calculatedSqft  Float   @default(0)  // Calculated square feet
+  
+  // Optional description for this measurement line
+  description     String? @db.VarChar(255)
+  
+  // Sort order for display
+  sortOrder       Int     @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([jobItemId])
+}
+
+model Settings {
+  id              Int     @id @default(autoincrement())
+  key             String  @unique @db.VarChar(100)
+  value           String  @db.Text
+  description     String? @db.VarChar(255)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Topsheet {
+  id              Int      @id @default(autoincrement())
+  topsheetNumber  String   @unique @db.VarChar(50)
+  date            DateTime @db.Date
+  
+  // Customer relation
+  customerId      Int?
+  customer        Customer? @relation(fields: [customerId], references: [id])
+  
+  // Customer info (denormalized for the topsheet)
+  customerName    String   @db.VarChar(255)
+  customerAddress1 String?  @db.VarChar(255)
+  customerAddress2 String?  @db.VarChar(255)
+  
+  // Job Detail for topsheet
+  jobDetail       String?  @db.Text
+  
+  // Status
+  status          String   @default("DRAFT") @db.VarChar(20)
+  
+  // Jobs assigned to this topsheet
+  jobs            Job[]
+  
+  // Notes
+  notes           String?  @db.Text
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([topsheetNumber])
+  @@index([date])
+  @@index([customerId])
+}
